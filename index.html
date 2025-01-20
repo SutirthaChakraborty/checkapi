@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Watermark Application</title>
+    <style>
+        :root {
+            --primary-color: #0078d4;
+            --hover-color: #005bb5;
+            --background-color: #f4f4f9;
+            --border-color: #ccc;
+            --error-color: #ff4444;
+            --success-color: #00C851;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: #333;
+            line-height: 1.6;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem 0;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        main {
+            margin: 2rem auto;
+            width: 90%;
+            max-width: 800px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+
+        h1, h2, h3 {
+            margin: 0 0 1rem 0;
+            color: #333;
+        }
+
+        form {
+            margin-top: 1.5rem;
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin: 0.5rem 0;
+            font-weight: 500;
+            color: #444;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        input[type="file"] {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            background: white;
+        }
+
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--hover-color);
+        }
+
+        button:disabled {
+            background-color: var(--border-color);
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+            color: var(--primary-color);
+        }
+
+        .loading::after {
+            content: "...";
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ""; }
+            40% { content: "."; }
+            60% { content: ".."; }
+            80% { content: "..."; }
+        }
+
+        .results {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background-color: #e7f3ff;
+            border: 1px solid var(--primary-color);
+            border-radius: 6px;
+            display: none;
+        }
+
+        .results pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: white;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 0;
+        }
+
+        .error {
+            color: var(--error-color);
+            font-size: 0.9rem;
+            margin-top: -0.5rem;
+            margin-bottom: 0.5rem;
+            display: none;
+        }
+
+        .section {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>File Watermark Application</h1>
+    </header>
+    <main>
+        <div class="section">
+            <h2>Embed Watermark</h2>
+            <form id="embed-form">
+                <div class="form-group">
+                    <label for="embed-file">Upload File:</label>
+                    <input type="file" id="embed-file" accept=".txt,.xml,.json" required>
+                    <div class="error" id="embed-file-error"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="embed-watermark">Watermark Text:</label>
+                    <input type="text" id="embed-watermark" placeholder="Enter watermark text" required>
+                    <div class="error" id="embed-watermark-error"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="embed-tag">Tag (for XML/JSON):</label>
+                    <input type="text" id="embed-tag" placeholder="Enter the tag or leave blank for .txt files">
+                    <div class="error" id="embed-tag-error"></div>
+                </div>
+
+                <button type="submit">Embed Watermark</button>
+                <div class="loading" id="embed-loading">Processing</div>
+            </form>
+        </div>
+
+        <div class="section">
+            <h2>Decode Watermark</h2>
+            <form id="decode-form">
+                <div class="form-group">
+                    <label for="decode-file">Upload File:</label>
+                    <input type="file" id="decode-file" accept=".txt,.xml,.json" required>
+                    <div class="error" id="decode-file-error"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="decode-tag">Tag (for XML/JSON):</label>
+                    <input type="text" id="decode-tag" placeholder="Enter the tag or leave blank for .txt files">
+                    <div class="error" id="decode-tag-error"></div>
+                </div>
+
+                <button type="submit">Decode Watermark</button>
+                <div class="loading" id="decode-loading">Processing</div>
+            </form>
+
+            <div class="results" id="results">
+                <h3>Results</h3>
+                <pre id="results-content"></pre>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE_URL = 'https://checkapi-472j.onrender.com';  // Change this to your API URL
+
+        function showError(elementId, message) {
+            const errorElement = document.getElementById(elementId);
+            errorElement.textContent = message;
+            errorElement.style.display = message ? 'block' : 'none';
+        }
+
+        function clearErrors() {
+            const errorElements = document.querySelectorAll('.error');
+            errorElements.forEach(element => {
+                element.style.display = 'none';
+                element.textContent = '';
+            });
+        }
+
+        function handleFileTypeChange(fileInput, tagInput) {
+            const file = fileInput.files[0];
+            if (file) {
+                const isTextFile = file.name.toLowerCase().endsWith('.txt');
+                tagInput.required = !isTextFile;
+                if (isTextFile) {
+                    tagInput.value = '';
+                    tagInput.placeholder = 'Not required for .txt files';
+                } else {
+                    tagInput.placeholder = 'Enter the tag (required for XML/JSON)';
+                }
+            }
+        }
+
+        async function handleEmbed(event) {
+            event.preventDefault();
+            clearErrors();
+
+            const fileInput = document.getElementById('embed-file');
+            const watermarkInput = document.getElementById('embed-watermark');
+            const tagInput = document.getElementById('embed-tag');
+            const loadingDiv = document.getElementById('embed-loading');
+            const submitButton = event.target.querySelector('button');
+
+            // Validation
+            if (!fileInput.files[0]) {
+                showError('embed-file-error', 'Please select a file');
+                return;
+            }
+
+            if (!watermarkInput.value.trim()) {
+                showError('embed-watermark-error', 'Please enter watermark text');
+                return;
+            }
+
+            const isTextFile = fileInput.files[0].name.toLowerCase().endsWith('.txt');
+            if (!isTextFile && !tagInput.value.trim()) {
+                showError('embed-tag-error', 'Tag is required for XML/JSON files');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('watermark_text', watermarkInput.value.trim());
+            formData.append('tag', tagInput.value.trim());
+
+            try {
+                loadingDiv.style.display = 'block';
+                submitButton.disabled = true;
+
+                const response = await fetch(`${API_BASE_URL}/embed_watermark`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'watermarked_' + fileInput.files[0].name;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+
+                    // Clear form
+                    event.target.reset();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to embed watermark');
+                }
+            } catch (error) {
+                showError('embed-file-error', error.message);
+            } finally {
+                loadingDiv.style.display = 'none';
+                submitButton.disabled = false;
+            }
+        }
+
+        async function handleDecode(event) {
+            event.preventDefault();
+            clearErrors();
+
+            const fileInput = document.getElementById('decode-file');
+            const tagInput = document.getElementById('decode-tag');
+            const loadingDiv = document.getElementById('decode-loading');
+            const resultsDiv = document.getElementById('results');
+            const resultsContent = document.getElementById('results-content');
+            const submitButton = event.target.querySelector('button');
+
+            // Validation
+            if (!fileInput.files[0]) {
+                showError('decode-file-error', 'Please select a file');
+                return;
+            }
+
+            const isTextFile = fileInput.files[0].name.toLowerCase().endsWith('.txt');
+            if (!isTextFile && !tagInput.value.trim()) {
+                showError('decode-tag-error', 'Tag is required for XML/JSON files');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('tag', tagInput.value.trim());
+
+            try {
+                loadingDiv.style.display = 'block';
+                resultsDiv.style.display = 'none';
+                submitButton.disabled = true;
+
+                const response = await fetch(`${API_BASE_URL}/decode_watermark`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    resultsContent.textContent = JSON.stringify(result, null, 2);
+                    resultsDiv.style.display = 'block';
+
+                    if (result.message === "No watermarks detected") {
+                        showError('decode-file-error', 'No watermarks found in the file');
+                    }
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to decode watermark');
+                }
+            } catch (error) {
+                showError('decode-file-error', error.message);
+            } finally {
+                loadingDiv.style.display = 'none';
+                submitButton.disabled = false;
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('embed-file').addEventListener('change', function() {
+            handleFileTypeChange(this, document.getElementById('embed-tag'));
+        });
+
+        document.getElementById('decode-file').addEventListener('change', function() {
+            handleFileTypeChange(this, document.getElementById('decode-tag'));
+        });
+
+        document.getElementById('embed-form').addEventListener('submit', handleEmbed);
+        document.getElementById('decode-form').addEventListener('submit', handleDecode);
+    </script>
+</body>
+</html>
