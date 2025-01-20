@@ -73,10 +73,22 @@ class FileProcessor:
             self.watermarked_positions = []  # Reset positions
 
             for i, word in enumerate(words):
-                if word.lower() not in self.stop_words and word.isalpha() and len(word) > 3:
-                    watermarked_word = self.twm.add_wm_rnd(word, watermark)
-                    watermarked_words.append(watermarked_word)
-                    self.watermarked_positions.append(i)  # Track position
+                if (word.lower() not in self.stop_words and 
+                    word.isalpha() and 
+                    len(word) > 3):
+                    try:
+                        watermarked_word = self.twm.add_wm_rnd(word, watermark)
+                        # Verify the watermark was actually embedded
+                        test_extract = self.twm.extract(watermarked_word)
+                        if test_extract:
+                            watermarked_words.append(watermarked_word)
+                            self.watermarked_positions.append(i)  # Track position
+                            print(f"Successfully watermarked word: {word} -> {watermarked_word}")  # Debug print
+                        else:
+                            watermarked_words.append(word)  # Use original if watermark failed
+                    except Exception as e:
+                        print(f"Failed to watermark word '{word}': {str(e)}")
+                        watermarked_words.append(word)  # Use original if watermark failed
                 else:
                     watermarked_words.append(word)
 
@@ -91,34 +103,45 @@ class FileProcessor:
             watermarked_words = {}
             
             for i, word in enumerate(words):
-                if len(word) > 3:  # Only try to decode words longer than 3 characters
+                # Try to decode every word that's not punctuation
+                if word.strip() and not all(c in '.,!?;:' for c in word):
                     try:
-                        wm = self.twm.extract(word)
-                        if wm:
-                            try:
-                                decoded = wm.decode("utf-8")
-                                if decoded:  # Only add if successfully decoded
-                                    watermarked_words[word] = {
-                                        'position': i,
-                                        'watermark': decoded
-                                    }
-                            except UnicodeDecodeError:
-                                continue
-                    except Exception:
+                        # Get all possible watermarks from the word
+                        watermarks = []
+                        try:
+                            wm = self.twm.extract(word)
+                            if wm:
+                                try:
+                                    decoded = wm.decode("utf-8")
+                                    if decoded and len(decoded.strip()) > 0:
+                                        watermarks.append(decoded)
+                                except UnicodeDecodeError:
+                                    pass
+                        except Exception as e:
+                            print(f"Error extracting watermark from word '{word}': {str(e)}")
+                            continue
+
+                        # Add word to results if any watermarks were found
+                        if watermarks:
+                            watermarked_words[word] = {
+                                'position': i,
+                                'watermark': watermarks[0]  # Take the first valid watermark
+                            }
+                            print(f"Found watermark in word '{word}': {watermarks[0]}")  # Debug print
+                    except Exception as e:
+                        print(f"Error processing word '{word}': {str(e)}")
                         continue
 
-            if watermarked_words:
-                return {
-                    'total_words': len(words),
-                    'watermarked_words': watermarked_words,
-                    'watermark_count': len(watermarked_words)
-                }
-            return {
+            result = {
                 'total_words': len(words),
-                'watermarked_words': {},
-                'watermark_count': 0,
-                'message': 'No watermarks detected'
+                'watermarked_words': watermarked_words,
+                'watermark_count': len(watermarked_words)
             }
+            
+            if not watermarked_words:
+                result['message'] = 'No watermarks detected'
+                
+            return result
         except Exception as e:
             raise Exception(f"Error in watermark decoding: {str(e)}")
 
