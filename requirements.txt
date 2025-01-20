@@ -1,1 +1,3 @@
 fastapi[all]
+nltk
+text_blind_watermark
