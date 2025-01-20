@@ -29,8 +29,6 @@ app.add_middleware(
 def ensure_nltk_data():
     """Ensure all required NLTK data is downloaded."""
     required_packages = ['punkt', 'stopwords']
-    
-    # Set NLTK data path to a writable directory
     nltk_data_dir = os.path.join(tempfile.gettempdir(), 'nltk_data')
     os.makedirs(nltk_data_dir, exist_ok=True)
     nltk.data.path.append(nltk_data_dir)
@@ -39,10 +37,7 @@ def ensure_nltk_data():
         try:
             nltk.data.find(f'tokenizers/{package}')
         except LookupError:
-            try:
-                nltk.download(package, download_dir=nltk_data_dir, quiet=True)
-            except Exception as e:
-                print(f"Error downloading {package}: {str(e)}")
+            nltk.download(package, download_dir=nltk_data_dir, quiet=True)
 
 # Download NLTK resources at startup
 ensure_nltk_data()
@@ -52,29 +47,22 @@ class FileProcessor:
         self.password = password.encode("utf-8")
         self.twm = TextBlindWatermark(pwd=self.password)
         self._ensure_stopwords()
+        self.watermarked_positions = []  # Track which words were watermarked
 
     def _ensure_stopwords(self):
         """Ensure stopwords are available."""
         try:
             self.stop_words = set(stopwords.words("english"))
-        except LookupError:
-            nltk.download('stopwords', quiet=True)
-            self.stop_words = set(stopwords.words("english"))
-        except Exception:
+        except:
             # Fallback to basic stopwords if NLTK fails
-            self.stop_words = set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 
-                                "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 
-                                'yourselves', 'he', 'him', 'his', 'himself', 'she', "she's", 'her', 
-                                'hers', 'herself', 'it', "it's", 'its', 'itself', 'they', 'them', 
-                                'their', 'theirs', 'themselves'])
+            self.stop_words = set(['i', 'me', 'my', 'myself', 'we', 'our'])
 
     def _tokenize_text(self, text: str) -> list:
         """Tokenize text with fallback method if NLTK fails."""
         try:
             return word_tokenize(text)
-        except LookupError:
-            # Fallback to basic tokenization if NLTK fails
-            return text.replace('.', ' . ').replace(',', ' , ').replace('!', ' ! ').replace('?', ' ? ').split()
+        except:
+            return text.split()
 
     def embed_watermark_important_words(self, input_text: str, watermark_text: str) -> str:
         """Embed watermark in important words of the text."""
@@ -82,10 +70,13 @@ class FileProcessor:
             watermark = watermark_text.encode("utf-8")
             words = self._tokenize_text(input_text)
             watermarked_words = []
+            self.watermarked_positions = []  # Reset positions
 
-            for word in words:
-                if word.lower() not in self.stop_words and word.isalpha():
-                    watermarked_words.append(self.twm.add_wm_rnd(word, watermark))
+            for i, word in enumerate(words):
+                if word.lower() not in self.stop_words and word.isalpha() and len(word) > 3:
+                    watermarked_word = self.twm.add_wm_rnd(word, watermark)
+                    watermarked_words.append(watermarked_word)
+                    self.watermarked_positions.append(i)  # Track position
                 else:
                     watermarked_words.append(word)
 
@@ -98,19 +89,36 @@ class FileProcessor:
         try:
             words = self._tokenize_text(watermarked_text)
             watermarked_words = {}
-
-            for word in words:
-                wm = self.twm.extract(word)
-                if wm:
+            
+            for i, word in enumerate(words):
+                if len(word) > 3:  # Only try to decode words longer than 3 characters
                     try:
-                        decoded = wm.decode("utf-8")
-                        watermarked_words[word] = decoded
-                    except UnicodeDecodeError:
+                        wm = self.twm.extract(word)
+                        if wm:
+                            try:
+                                decoded = wm.decode("utf-8")
+                                if decoded:  # Only add if successfully decoded
+                                    watermarked_words[word] = {
+                                        'position': i,
+                                        'watermark': decoded
+                                    }
+                            except UnicodeDecodeError:
+                                continue
+                    except Exception:
                         continue
 
             if watermarked_words:
-                return watermarked_words
-            return "No watermark detected."
+                return {
+                    'total_words': len(words),
+                    'watermarked_words': watermarked_words,
+                    'watermark_count': len(watermarked_words)
+                }
+            return {
+                'total_words': len(words),
+                'watermarked_words': {},
+                'watermark_count': 0,
+                'message': 'No watermarks detected'
+            }
         except Exception as e:
             raise Exception(f"Error in watermark decoding: {str(e)}")
 
@@ -135,7 +143,7 @@ class FileProcessor:
                                 data[key] = self.embed_watermark_important_words(
                                     value, watermark_text
                                 )
-                            else:
+                            elif isinstance(value, (dict, list)):
                                 embed_json(value, tag)
                     elif isinstance(data, list):
                         for item in data:
@@ -154,11 +162,10 @@ class FileProcessor:
                 for text_elem in root.findall(f".//{tag}"):
                     if text_elem.text:
                         watermarks = self.decode_watermark_words(text_elem.text)
-                        if watermarks != "No watermark detected.":
-                            results.append({
-                                'text': text_elem.text[:100] + '...',
-                                'watermarks': watermarks
-                            })
+                        results.append({
+                            'text': text_elem.text,
+                            'analysis': watermarks
+                        })
             else:  # JSON processing
                 data = json.loads(content)
                 def decode_json(data, tag):
@@ -166,12 +173,11 @@ class FileProcessor:
                         for key, value in data.items():
                             if key == tag and isinstance(value, str):
                                 watermarks = self.decode_watermark_words(value)
-                                if watermarks != "No watermark detected.":
-                                    results.append({
-                                        'text': value[:100] + '...',
-                                        'watermarks': watermarks
-                                    })
-                            else:
+                                results.append({
+                                    'text': value,
+                                    'analysis': watermarks
+                                })
+                            elif isinstance(value, (dict, list)):
                                 decode_json(value, tag)
                     elif isinstance(data, list):
                         for item in data:
@@ -257,8 +263,6 @@ async def decode_watermark(
 
         if file.filename.endswith(".txt"):
             watermarks = processor.decode_watermark_words(content)
-            if watermarks == "No watermark detected.":
-                return {"message": "No watermarks detected"}
             return {"decoded_watermarks": watermarks}
         
         else:  # XML or JSON
@@ -269,10 +273,6 @@ async def decode_watermark(
                 )
                 
             decoded_results = processor.decode_xml_or_json(content, tag)
-            
-            if not decoded_results:
-                return {"message": "No watermarks detected in the specified tag"}
-
             return {"decoded_watermarks": decoded_results}
 
     except Exception as e:
