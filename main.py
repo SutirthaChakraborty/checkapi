@@ -20,43 +20,67 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-def download_nltk_resources():
-    """Download required NLTK resources on startup."""
-    resources = ['punkt', 'stopwords']
-    for resource in resources:
+def ensure_nltk_data():
+    """Ensure all required NLTK data is downloaded."""
+    required_packages = ['punkt', 'stopwords']
+    
+    # Set NLTK data path to a writable directory
+    nltk_data_dir = os.path.join(tempfile.gettempdir(), 'nltk_data')
+    os.makedirs(nltk_data_dir, exist_ok=True)
+    nltk.data.path.append(nltk_data_dir)
+    
+    for package in required_packages:
         try:
-            nltk.download(resource, quiet=True)
-        except Exception as e:
-            print(f"Error downloading {resource}: {str(e)}")
+            nltk.data.find(f'tokenizers/{package}')
+        except LookupError:
+            try:
+                nltk.download(package, download_dir=nltk_data_dir, quiet=True)
+            except Exception as e:
+                print(f"Error downloading {package}: {str(e)}")
 
 # Download NLTK resources at startup
-download_nltk_resources()
+ensure_nltk_data()
 
 class FileProcessor:
-    """Class to handle file processing operations including watermark embedding and decoding."""
-    
     def __init__(self, password: str):
-        """Initialize the FileProcessor with a password for watermarking."""
         self.password = password.encode("utf-8")
         self.twm = TextBlindWatermark(pwd=self.password)
+        self._ensure_stopwords()
+
+    def _ensure_stopwords(self):
+        """Ensure stopwords are available."""
         try:
             self.stop_words = set(stopwords.words("english"))
         except LookupError:
-            print("Warning: Stopwords not available. Downloading now...")
-            nltk.download('stopwords')
+            nltk.download('stopwords', quiet=True)
             self.stop_words = set(stopwords.words("english"))
+        except Exception:
+            # Fallback to basic stopwords if NLTK fails
+            self.stop_words = set(['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 
+                                "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 
+                                'yourselves', 'he', 'him', 'his', 'himself', 'she', "she's", 'her', 
+                                'hers', 'herself', 'it', "it's", 'its', 'itself', 'they', 'them', 
+                                'their', 'theirs', 'themselves'])
+
+    def _tokenize_text(self, text: str) -> list:
+        """Tokenize text with fallback method if NLTK fails."""
+        try:
+            return word_tokenize(text)
+        except LookupError:
+            # Fallback to basic tokenization if NLTK fails
+            return text.replace('.', ' . ').replace(',', ' , ').replace('!', ' ! ').replace('?', ' ? ').split()
 
     def embed_watermark_important_words(self, input_text: str, watermark_text: str) -> str:
         """Embed watermark in important words of the text."""
         try:
             watermark = watermark_text.encode("utf-8")
-            words = word_tokenize(input_text)
+            words = self._tokenize_text(input_text)
             watermarked_words = []
 
             for word in words:
@@ -72,7 +96,7 @@ class FileProcessor:
     def decode_watermark_words(self, watermarked_text: str) -> dict:
         """Decode watermarks from the text."""
         try:
-            words = word_tokenize(watermarked_text)
+            words = self._tokenize_text(watermarked_text)
             watermarked_words = {}
 
             for word in words:
@@ -91,7 +115,7 @@ class FileProcessor:
             raise Exception(f"Error in watermark decoding: {str(e)}")
 
     def process_xml_or_json(self, content: str, watermark_text: str, tag: str) -> str:
-        """Process XML or JSON content by embedding watermarks in specified tags."""
+        """Process XML or JSON content for watermark embedding."""
         try:
             if content.strip().startswith("<"):  # XML processing
                 root = ET.fromstring(content)
@@ -171,16 +195,12 @@ async def embed_watermark(
         if not file.filename:
             raise HTTPException(status_code=400, detail="No file uploaded")
         
-        if not watermark_text:
-            raise HTTPException(status_code=400, detail="Watermark text is required")
-            
         content = await file.read()
         content = content.decode("utf-8")
 
         if file.filename.endswith(".txt"):
             watermarked_text = processor.embed_watermark_important_words(content, watermark_text)
             
-            # Save to temporary file
             temp_dir = tempfile.gettempdir()
             output_path = os.path.join(temp_dir, "watermarked_output.txt")
             
@@ -202,7 +222,6 @@ async def embed_watermark(
                 
             watermarked_content = processor.process_xml_or_json(content, watermark_text, tag)
             
-            # Save to temporary file
             temp_dir = tempfile.gettempdir()
             ext = file.filename.split('.')[-1]
             output_path = os.path.join(temp_dir, f"watermarked_output.{ext}")
@@ -276,4 +295,5 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
+    ensure_nltk_data()
     uvicorn.run(app, host="0.0.0.0", port=8000)
